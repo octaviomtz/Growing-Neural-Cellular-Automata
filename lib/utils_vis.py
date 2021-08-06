@@ -29,9 +29,17 @@ class SamplePool:
 def to_alpha(x):
     return np.clip(x[..., 3:4], 0, 0.9999)
 
+def to_alpha_1ch(x):
+    return np.clip(x[..., 1:2], 0, 0.9999)
+
 def to_rgb(x):
     # assume rgb premultiplied by alpha
     rgb, a = x[..., :3], to_alpha(x)
+    return np.clip(1.0-a+rgb, 0, 0.9999)
+
+def to_rgb_1ch(x):
+    # assume rgb premultiplied by alpha
+    rgb, a = x[..., :1], to_alpha_1ch(x)
     return np.clip(1.0-a+rgb, 0, 0.9999)
 
 def get_living_mask(x):
@@ -45,6 +53,11 @@ def make_seeds(shape, n_channels, n=1):
 def make_seed(shape, n_channels):
     seed = np.zeros([shape[0], shape[1], n_channels], np.float32)
     seed[shape[0]//2, shape[1]//2, 3:] = 1.0
+    return seed
+
+def make_seed_1ch(shape, n_channels):
+    seed = np.zeros([shape[0], shape[1], n_channels], np.float32)
+    seed[shape[0]//2, shape[1]//2, 1:] = 1.0
     return seed
 
 def make_circle_masks(n, h, w):
