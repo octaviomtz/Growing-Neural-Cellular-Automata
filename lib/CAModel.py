@@ -5,11 +5,12 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 class CAModel(nn.Module):
-    def __init__(self, channel_n, fire_rate, device, hidden_size=128):
+    def __init__(self, channel_n, fire_rate, device, hidden_size=128, scale_growth=1):
         super(CAModel, self).__init__()
 
         self.device = device
         self.channel_n = channel_n
+        self.scale_growth = scale_growth
 
         self.fc0 = nn.Linear(channel_n*3, hidden_size)
         self.fc1 = nn.Linear(hidden_size, channel_n, bias=False)
@@ -19,8 +20,16 @@ class CAModel(nn.Module):
         self.fire_rate = fire_rate
         self.to(self.device)
 
+    def normalize_grads(self):
+        ''' 
+        from(github.com/Mayukhdeb/differentiable-morphogenesis)
+        gradient normalization for constant step size and to avoid spikes 
+        '''
+        for p in self.parameters():
+            p.grad.data = p.grad.data/(p.grad.data.norm()+1e-8) 
+
     def alive(self, x):
-        return F.max_pool2d(x[:, 3:4, :, :], kernel_size=3, stride=1, padding=1) > 0.1
+        return F.max_pool2d(x[:, 1:2, :, :], kernel_size=3, stride=1, padding=1) > 0.1
 
     def perceive(self, x, angle):
 
@@ -56,7 +65,7 @@ class CAModel(nn.Module):
         stochastic = torch.rand([dx.size(0),dx.size(1),dx.size(2),1])>fire_rate
         stochastic = stochastic.float().to(self.device)
         dx = dx * stochastic
-
+        dx = dx * self.scale_growth
         x = x+dx.transpose(1,3)
 
         post_life_mask = self.alive(x)

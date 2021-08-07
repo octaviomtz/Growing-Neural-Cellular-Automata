@@ -14,6 +14,10 @@ from IPython.display import clear_output
 from lib.CAModel import CAModel
 from lib.utils_vis import SamplePool, to_alpha_1ch, to_rgb_1ch, get_living_mask, make_seed_1ch, make_circle_masks
 
+# import importlib
+# import lib
+# importlib.reload(lib.CAModel)
+
 #%% FUNCTIONS
 def load_emoji(index, path="data/emoji.png"):
     im = imageio.imread(path)
@@ -22,6 +26,7 @@ def load_emoji(index, path="data/emoji.png"):
     return emoji
 
 def visualize_batch(x0, x):
+    plt.style.use("Solarize_Light2")
     vis0 = to_rgb_1ch(x0)
     vis1 = to_rgb_1ch(x)
     # vis0 = x0[...,0]
@@ -38,10 +43,13 @@ def visualize_batch(x0, x):
         plt.axis('off')
     plt.show()
 
-def plot_loss(loss_log):
+def plot_loss(loss_log, epochs=2000):
     plt.figure(figsize=(10, 4))
     plt.title('Loss history (log10)')
-    plt.plot(np.log10(loss_log), '.', alpha=0.1)
+    plt.plot(np.log10(loss_log_default), '.', alpha=0.1)
+    plt.plot(np.log10(loss_log), '.', alpha=0.1, c='r')
+    plt.ylim([-5, np.max(loss_log)])
+    plt.xlim([0, epochs])
     plt.show()
 
 def load_1ch_py_array(array_path):
@@ -63,26 +71,29 @@ TARGET_SIZE = 40
 lr = 2e-3
 lr_gamma = 0.9999
 betas = (0.5, 0.5)
-n_epoch = 80000
+EPOCHS = 2000
 
 BATCH_SIZE = 8
 POOL_SIZE = 1024
 CELL_FIRE_RATE = 0.5
+SCALE_GROWTH = .1
 
-# # TARGET_EMOJI = 0 #@param "🦎"
-
-# EXPERIMENT_TYPE = "Growing"
-# EXPERIMENT_MAP = {"Growing":0, "Persistent":1, "Regenerating":2}
-# EXPERIMENT_N = EXPERIMENT_MAP[EXPERIMENT_TYPE]
-
-# USE_PATTERN_POOL = [0, 1, 1][EXPERIMENT_N]
-# DAMAGE_N = [0, 0, 3][EXPERIMENT_N]  # Number of patterns to damage in a batch
+#%% LOAD DEFAULT RESULTS
+loss_log_default = np.load('data/loss_scale_growth=1_ep=10k.npy')
+grow_sel_max_default = np.load('data/grow_max_scale_growth=1_ep=10k.npy')
+mse_recons_default = np.load('data/mse_recons_default_ep=10k.npy')
+loss_log_default2 = np.load('data/loss_scale_growth=1_ep=2k.npy')
+grow_sel_max_default2 = np.load('data/grow_max_scale_growth=1_ep=2k.npy')
+mse_recons_default2 = np.load('data/mse_recons_default_ep=2k.npy')
 
 #%%
 target_img = load_1ch_py_array('data/lesion2.npz')
 print(np.shape(target_img))
 plt.figure(figsize=(4,4))
 plt.imshow(np.squeeze(to_rgb_1ch(target_img)))
+
+#%%
+print(len(loss_log_default))
 
 # %% SEED AND nCA
 p = TARGET_PADDING
@@ -94,7 +105,7 @@ pad_target = torch.from_numpy(pad_target.astype(np.float32)).to(device)
 seed = make_seed_1ch((h, w), CHANNEL_N)
 pool = SamplePool(x=np.repeat(seed[None, ...], POOL_SIZE, 0))
 
-ca = CAModel(CHANNEL_N, CELL_FIRE_RATE, device).to(device)
+ca = CAModel(CHANNEL_N, CELL_FIRE_RATE, device, scale_growth=SCALE_GROWTH).to(device)
 ca.load_state_dict(torch.load(model_path))
 
 optimizer = optim.Adam(ca.parameters(), lr=lr, betas=betas)
@@ -108,11 +119,12 @@ def train(x, target, steps, optimizer, scheduler):
     loss = F.mse_loss(x[:, :, :, :2], target)
     optimizer.zero_grad()
     loss.backward()
+    ca.normalize_grads()
     optimizer.step()
     scheduler.step()
     return x, loss
 
-for i in range(n_epoch+1):
+for i in range(EPOCHS+1):
     
     x0 = np.repeat(seed[None, ...], BATCH_SIZE, 0)
     x0 = torch.from_numpy(x0.astype(np.float32)).to(device)
@@ -134,6 +146,7 @@ grow = torch.tensor(seed).unsqueeze(0).to(device)
 grow_sel = []
 ITER_GROW = 60
 ITER_SAVE = 30
+grow_sel_max = []
 with torch.no_grad():
     for i in range(ITER_GROW):
         grow = ca(grow)
@@ -142,10 +155,54 @@ with torch.no_grad():
             grow_img = grow_img[0,...,:1]
             grow_img = np.squeeze(np.clip(grow_img,0,1))
             grow_sel.append(grow_img)
+            grow_sel_max.append(np.max(grow_img))
 # %% PLOT GROWING LESIONS
 fig, ax = plt.subplots(5,6, figsize=(18,12))
 for i in range(ITER_SAVE):
-    ax.flat[i].imshow(grow_sel[i])
+    ax.flat[i].imshow(grow_sel[i], vmin=0, vmax=1)
     ax.flat[i].axis('off')
 fig.tight_layout()
+
+# %% MSE RECONSTRUCTION
+target_padded = pad_target.detach().cpu().numpy()[0,...,0]
+mse_recons = []
+for i in range(ITER_SAVE):
+    mse_recons.append(np.mean((grow_sel[i] - target_padded)**2))
+
+# %% PLOT MAX INTENSITY AND MSE
+plt.style.use("Solarize_Light2")
+fig, ax = plt.subplots(1,2, figsize=(12,4))
+ax[0].plot(grow_sel_max_default, label='(10k) scale = 1', alpha=.3)
+ax[0].plot(grow_sel_max_default2, label='(2k) scale = 1', alpha=.3)
+ax[0].plot(grow_sel_max, label=f'scale={SCALE_GROWTH:.02f}')
+ax[0].legend()
+ax[1].semilogy(mse_recons_default, label='(10k) scale = 1', alpha=.3)
+ax[1].semilogy(mse_recons_default2, label='(2k) scale = 1', alpha=.3)
+ax[1].semilogy(mse_recons, label=f'scale={SCALE_GROWTH:.02f}')
+ax[1].legend()
+
+########### finish
+#%%
+def movingaverage(interval, window_size):
+    window = np.ones(int(window_size))/float(window_size)
+    return np.convolve(interval, window, 'same')
+
+# %%
+
+# np.save('data/loss_scale_growth=1_ep=2k.npy', loss_log)
+# np.save('data/grow_max_scale_growth=1_ep=2k.npy', grow_sel_max)
+# np.save('data/mse_recons_default_ep=2k.npy', mse_recons)
+
+#%%
+plt.figure(figsize=(10, 4))
+plt.title('Loss history (log10)')
+# plt.plot(np.log10(loss_log_default), '.', alpha=0.1)
+plt.plot(np.log10(loss_log), '.', alpha=0.1, c='b')
+# plt.plot(movingaverage(np.log10(loss_log),5))
+plt.plot()
+plt.ylim([-6, -1])
+plt.xlim([0, 2000])
+plt.show()
+# %%
+len(loss_log)
 # %%
