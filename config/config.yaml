@@ -1,0 +1,18 @@
+device: cuda:0
+TARGET_PADDING: 16
+model_path: models/remaster_1.pth
+EPOCHS: 2000
+CHANNEL_N: 16
+CELL_FIRE_RATE: 0.5
+BATCH_SIZE: 8
+
+SCALE_GROWTH: .1
+
+lr: 2e-3
+betas_0: 0.5
+betas_1: 0.5
+
+lr_gamma: 0.9999
+
+ITER_GROW: 60
+ITER_SAVE: 30
