@@ -1,7 +1,7 @@
 #%% IMPORTS
 import time
 import imageio
-
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -17,6 +17,27 @@ from lib.utils_vis import SamplePool, to_alpha_1ch, to_rgb_1ch, get_living_mask,
 # import importlib
 # import lib
 # importlib.reload(lib.CAModel)
+#%%
+import hydra
+hydra.utils.get_original_cwd()
+#%%
+def load_baselines(path_orig, extra_text, path='outputs/baselines/'):
+    files = os.listdir(f'{path_orig}/{path}')
+    outputs = []
+    for key in ['max_syn_SG=1_ep=2k', 'mse_syn_SG=1_ep=2k', 'train_loss_SG=1_ep=2k', 'max_syn_SG=1_ep=10k', 'mse_syn_SG=1_ep=10k', 'train_loss_SG=1_ep=10k']:
+        file = f'{key}{extra_text}.npy'
+        if file in files:
+            outputs.append(np.load(f'{path_orig}/{path}{file}'))
+        else:
+            outputs.append(-1)
+    return outputs 
+#%%
+path_orig = './'
+extra_text = '_volume-covid19-A-0014_34_2'
+max_2k, mse_2k, train_loss_2k, max_10k, mse_10k, train_loss_10k = load_baselines(path_orig, extra_text)
+plt.plot(train_loss_2k)
+#%%
+#%%
 
 #%% FUNCTIONS
 def load_emoji(index, path="data/emoji.png"):

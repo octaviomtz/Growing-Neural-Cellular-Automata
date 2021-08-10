@@ -19,3 +19,20 @@ ITER_GROW: 60
 ITER_SAVE: 30
 
 SAVE_NUMPY: False
+
+data:
+  data_folder: /content/drive/MyDrive/Datasets/covid19/COVID-19-20_v2/Train
+  path_single_lesions: /content/drive/MyDrive/Datasets/covid19/COVID-19-20/individual_lesions/
+  path_texture: /content/drive/My Drive/Datasets/covid19/results/cea_synthesis/patient0/
+  SCAN_NAME: volume-covid19-A-0014
+  SLICE: 34
+  BATCH_SIZE: 1
+
+loop:
+  SKIP_LESIONS: -1
+  ONLY_ONE_SLICE: 34
+  TRESH_PLOT: 20
+
+seed:
+  SEED_VALUE: 0.19
+  
