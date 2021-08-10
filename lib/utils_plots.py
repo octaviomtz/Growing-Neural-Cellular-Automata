@@ -27,7 +27,7 @@ def visualize_batch(x0, x, save=True, text=''):
 def plot_loss(loss_log, SCALE_GROWTH, loss_log_base=-1, epochs=2000, save=True, text=''):
     plt.figure(figsize=(10, 4))
     plt.title('Loss history (log10)')
-    if loss_log_base != -1:
+    if len(loss_log_base) > 10:
         plt.plot(np.log10(loss_log_base), '.', alpha=0.1, label='base scale=1')
     plt.plot(np.log10(loss_log), '.', alpha=0.1, c='r', label=f'scale={SCALE_GROWTH:.02f}')
     plt.ylim([-5, np.max(loss_log)])
@@ -42,14 +42,14 @@ def plot_max_intensity_and_mse(grow_max, mse_recons, SCALE_GROWTH, max_base=-1, 
     # %% PLOT MAX INTENSITY AND MSE
     plt.style.use("Solarize_Light2")
     fig, ax = plt.subplots(1,2, figsize=(12,4))
-    if max_base!=-1: ax[0].plot(max_base, label='(10k) scale = 1', alpha=.3)
-    if max_base2!=-1: ax[0].plot(max_base2, label='(2k) scale = 1', alpha=.3)
+    if len(max_base)> 10: ax[0].plot(max_base, label='(10k) scale = 1', alpha=.3)
+    if len(max_base2)> 10: ax[0].plot(max_base2, label='(2k) scale = 1', alpha=.3)
     ax[0].plot(grow_max, label=f'scale={SCALE_GROWTH:.02f}')
     ax[0].legend(loc = 'lower left')
     ax[0].set_xlabel('reconstruction epochs')
     ax[0].set_ylabel('max intensity')
-    if mse_base!=-1: ax[1].semilogy(mse_base, label='(10k) scale = 1', alpha=.3)
-    if mse_base2!=-1: ax[1].semilogy(mse_base2, label='(2k) scale = 1', alpha=.3)
+    if len(mse_base)> 10: ax[1].semilogy(mse_base, label='(10k) scale = 1', alpha=.3)
+    if len(mse_base2)> 10: ax[1].semilogy(mse_base2, label='(2k) scale = 1', alpha=.3)
     ax[1].semilogy(mse_recons, label=f'scale={SCALE_GROWTH:.02f}')
     ax[1].legend(loc = 'lower left')
     ax[1].set_xlabel('reconstruction epochs')

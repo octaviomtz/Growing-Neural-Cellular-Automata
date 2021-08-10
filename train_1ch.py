@@ -186,9 +186,7 @@ def main_train(cfg: DictConfig):
                     grow_sel.append(grow_img)
                     grow_max.append(np.max(grow_img))
         
-        print(path_orig)
         max_2k, mse_2k, train_loss_2k, max_10k, mse_10k, train_loss_10k = load_baselines(path_orig, extra_text)
-        print(len(max_2k), len(mse_2k), len(train_loss_2k), len(max_10k), len(mse_10k), len(train_loss_10k))
         visualize_batch(x0.detach().cpu().numpy(), x.detach().cpu().numpy(), text=extra_text)
         plot_loss(loss_log, cfg.SCALE_GROWTH, train_loss_2k, text=extra_text)#, loss_base)
         plot_max_intensity_and_mse(grow_max, mse_recons, cfg.SCALE_GROWTH, max_base=max_2k, max_base2=max_10k, mse_base=mse_2k, mse_base2=mse_10k, text=extra_text)
