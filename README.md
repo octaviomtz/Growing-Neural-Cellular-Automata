@@ -1,11 +1,10 @@
-# Growing-Neural-Cellular-Automata
+# Neural Cellular Automata (nCA) experiments
+We use hydra to evaluate nCA on 1-channel images with different parameters.
 
-A reproduction of Growing Neural Cellular Automata using PyTorch:
+Based on this pytorch implementation: 
 
-```
-Mordvintsev, et al., "Growing Neural Cellular Automata", Distill, 2020.
-```
+_github.com/chenmingxiang110/Growing-Neural-Cellular-Automata_
 
-Run "training.ipynb" to train a model, and "main_pygame_dl.py" to play the demo (A pre-trained model is already given, see ./models).
+of the Growing Neural Cellular Automata developed by:
 
-<img src="data/demo.gif" width="400" height="400">
+_**Mordvintsev A.**, et al., "Growing Neural Cellular Automata", Distill, 2020._

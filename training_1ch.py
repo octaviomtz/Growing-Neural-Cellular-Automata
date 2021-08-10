@@ -65,13 +65,13 @@ device = torch.device("cuda:0")
 model_path = "models/remaster_1.pth"
 
 CHANNEL_N = 16        # Number of CA state channels
-TARGET_PADDING = 16   # Number of pixels used to pad the target image border
+TARGET_PADDING = 0   # Number of pixels used to pad the target image border
 TARGET_SIZE = 40
 
 lr = 2e-3
 lr_gamma = 0.9999
 betas = (0.5, 0.5)
-EPOCHS = 2000
+EPOCHS = 200
 
 BATCH_SIZE = 8
 POOL_SIZE = 1024
@@ -79,15 +79,16 @@ CELL_FIRE_RATE = 0.5
 SCALE_GROWTH = .1
 
 #%% LOAD DEFAULT RESULTS
-loss_log_default = np.load('data/loss_scale_growth=1_ep=10k.npy')
-grow_sel_max_default = np.load('data/grow_max_scale_growth=1_ep=10k.npy')
-mse_recons_default = np.load('data/mse_recons_default_ep=10k.npy')
-loss_log_default2 = np.load('data/loss_scale_growth=1_ep=2k.npy')
-grow_sel_max_default2 = np.load('data/grow_max_scale_growth=1_ep=2k.npy')
-mse_recons_default2 = np.load('data/mse_recons_default_ep=2k.npy')
+path_files = 'data/lesion2/'
+loss_log_default = np.load('data/lesion2/loss_scale_growth=1_ep=10k.npy')
+grow_sel_max_default = np.load('data/lesion2/grow_max_scale_growth=1_ep=10k.npy')
+mse_recons_default = np.load('data/lesion2/mse_recons_default_ep=10k.npy')
+loss_log_default2 = np.load('data/lesion2/loss_scale_growth=1_ep=2k.npy')
+grow_sel_max_default2 = np.load('data/lesion2/grow_max_scale_growth=1_ep=2k.npy')
+mse_recons_default2 = np.load('data/lesion2/mse_recons_default_ep=2k.npy')
 
 #%%
-target_img = load_1ch_py_array('data/lesion2.npz')
+target_img = load_1ch_py_array('data/lesion2/lesion.npz')
 print(np.shape(target_img))
 plt.figure(figsize=(4,4))
 plt.imshow(np.squeeze(to_rgb_1ch(target_img)))
@@ -103,10 +104,10 @@ pad_target = np.expand_dims(pad_target, axis=0)
 pad_target = torch.from_numpy(pad_target.astype(np.float32)).to(device)
 
 seed = make_seed_1ch((h, w), CHANNEL_N)
-pool = SamplePool(x=np.repeat(seed[None, ...], POOL_SIZE, 0))
-
+# pool = SamplePool(x=np.repeat(seed[None, ...], POOL_SIZE, 0))
+#%%
 ca = CAModel(CHANNEL_N, CELL_FIRE_RATE, device, scale_growth=SCALE_GROWTH).to(device)
-ca.load_state_dict(torch.load(model_path))
+# ca.load_state_dict(torch.load(model_path))
 
 optimizer = optim.Adam(ca.parameters(), lr=lr, betas=betas)
 scheduler = optim.lr_scheduler.ExponentialLR(optimizer, lr_gamma)
@@ -119,7 +120,7 @@ def train(x, target, steps, optimizer, scheduler):
     loss = F.mse_loss(x[:, :, :, :2], target)
     optimizer.zero_grad()
     loss.backward()
-    ca.normalize_grads()
+    # ca.normalize_grads()
     optimizer.step()
     scheduler.step()
     return x, loss
@@ -205,4 +206,6 @@ plt.xlim([0, 2000])
 plt.show()
 # %%
 len(loss_log)
+# %%
+EPOCHS = 200
 # %%

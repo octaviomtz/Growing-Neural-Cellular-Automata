@@ -1,0 +1,9 @@
+torch==1.9.0+cu102
+matplotlib==3.2.2
+numpy==1.19.5
+imageio==2.4.1
+tqdm==4.41.1
+hydra==2.5
+ipython==7.26.0
+omegaconf==2.1.0
+pygame==2.0.1
