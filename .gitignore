@@ -2,3 +2,6 @@
 data/*
 outputs/*
 temp_*
+multirun/*
+wandb/*
+outputs/*

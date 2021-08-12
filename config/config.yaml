@@ -8,6 +8,7 @@ CELL_FIRE_RATE: 0.5
 BATCH_SIZE: 8
 
 SCALE_GROWTH: 1
+SCALE_GROWTH_SYN: 1
 
 lr: 2e-3
 betas_0: 0.5
@@ -17,6 +18,8 @@ lr_gamma: 0.9999
 
 ITER_GROW: 60
 ITER_SAVE: 30
+
+wandb: True
 
 SAVE_NUMPY: False
 
@@ -32,6 +35,7 @@ loop:
   SKIP_LESIONS: -1
   ONLY_ONE_SLICE: 34
   TRESH_PLOT: 20
+  ONLY_ONE_LESION: 1
 
 seed:
   SEED_VALUE: 0.19

@@ -1,0 +1,19 @@
+program: train_1ch.py
+method: bayes
+metric:
+  name: intense_mse
+  goal: minimize
+parameters:
+  SCALE_GROWTH:
+    values: [1, .5, .1, .05, .01]
+  SCALE_GROWTH_SYN:
+    values: [1, .5, .1, .05, .01]
+  lr:
+    distribution: log_uniform
+    min: -4
+    max: -1
+command:
+  - ${env}
+  - python3
+  - train_1ch.py
+  - ${args_no_hyphens}

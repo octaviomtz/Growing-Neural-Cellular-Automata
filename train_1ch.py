@@ -16,10 +16,10 @@ from lib.CAModel import CAModel
 
 from tqdm import tqdm
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import logging
 
-from lib.utils_plots import visualize_batch, plot_loss, plot_max_intensity_and_mse, plot_lesion_growing, load_baselines, make_seed_1ch, plot_seeds
+from lib.utils_plots import visualize_batch, plot_loss_max_intensity_and_mse, plot_lesion_growing, load_baselines, make_seed_1ch, plot_seeds
 from lib.utils_monai import (load_COVID19_v2,
                             load_synthetic_lesions,
                             load_scans,
@@ -35,9 +35,9 @@ from lib.utils_superpixels import (
 )
 # from lib.utils_cell_auto import prepare_seed
 import monai
+import wandb
 
 # FUNCTIONS
-
 def prepare_seed(target, this_seed, device, num_channels = 16, pool_size = 1024):
     # prepare seed
     height, width, _ = np.shape(target)
@@ -46,27 +46,14 @@ def prepare_seed(target, this_seed, device, num_channels = 16, pool_size = 1024)
         seed[..., i+1] = this_seed
     return seed
 
-def load_1ch_py_array(path):
-    path = f'{path}/lesion.npz'
-    array = np.load(path)
-    array = array.f.arr_0
-    array = np.expand_dims(array,-1)
-    array = np.repeat(array,2,-1)
-    array[...,1] = array[...,0]>0 
-    return array
-
 def config_cellular_automata(orig_dir, CHANNEL_N, CELL_FIRE_RATE, device, SCALE_GROWTH, model_path, lr, betas_0, betas_1, lr_gamma):
-    # h, w = height_width
-    # seed = make_seed_1ch((h, w), CHANNEL_N)
-    # pool = SamplePool(x=np.repeat(seed[None, ...], cfg.POOL_SIZE, 0))
-
     ca = CAModel(CHANNEL_N, CELL_FIRE_RATE, device, scale_growth=SCALE_GROWTH).to(device)
     # ca.load_state_dict(torch.load(f'{orig_dir}/{model_path}'))
 
     optimizer = optim.Adam(ca.parameters(), lr=lr, betas=(betas_0, betas_1))
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, lr_gamma)
 
-    return ca, optimizer, scheduler#, seed
+    return ca, optimizer, scheduler
 
 def pad_target_func(target_img, padding, device):
     p = padding
@@ -77,7 +64,7 @@ def pad_target_func(target_img, padding, device):
     pad_target = torch.from_numpy(pad_target.astype(np.float32)).to(torch.device(device))
     return pad_target, height_width   
 
-def train(ca, x, target, steps, optimizer, scheduler):
+def train(ca, x, target, steps, optimizer, scheduler, cfg_wandb):
     """Runs cellular automata (nCA), backpropagates and updates the weights
 
     Args:
@@ -99,12 +86,25 @@ def train(ca, x, target, steps, optimizer, scheduler):
     # ca.normalize_grads()
     optimizer.step()
     scheduler.step()
+    if cfg_wandb: wandb.log({"train_loss": loss})
     return x, loss
 
 
 @hydra.main(config_path="config", config_name="config.yaml")
 def main_train(cfg: DictConfig):
+    # WEIGHTS AND BIASES
+    hyperparams_default = {'SCALE_GROWTH':cfg.SCALE_GROWTH, 'SCALE_GROWTH_SYN':cfg.SCALE_GROWTH_SYN,'lr':cfg.lr,'wandb':True}
+    if cfg.wandb:
+        wandb.init(project='cellaut_grid_search', entity='octaviomtz', config=hyperparams_default)
+        config = wandb.config
+        wandb_omega_config = OmegaConf.create(wandb.config._as_dict())
+        cfg.SCALE_GROWTH = wandb_omega_config.SCALE_GROWTH
+        cfg.SCALE_GROWTH_SYN = wandb_omega_config.SCALE_GROWTH_SYN
+        cfg.lr = wandb_omega_config.lr
+        
+    # HYDRA
     log = logging.getLogger(__name__)
+    log.info(OmegaConf.to_yaml(cfg))
     path_orig = hydra.utils.get_original_cwd()
     # LOAD FILES
     images, labels, keys, files_scans = load_COVID19_v2(cfg.data.data_folder, cfg.data.SCAN_NAME)
@@ -152,14 +152,13 @@ def main_train(cfg: DictConfig):
     for i in targets:
         print(i.shape)
     
-    # path_data = f'{path_orig}/data/{cfg.LESION}'
-    # loss_base, max_base, mse_base, loss_base2, max_base2, mse_base2 =  load_baselines(path_data)
-    # target_img = load_1ch_py_array(path_data)
     # CELLULAR AUTOMATA
     for idx_tgt, (target_i, seed_i) in enumerate(zip(targets,seeds)):
+        if cfg.loop.ONLY_ONE_LESION != False and cfg.loop.ONLY_ONE_LESION != idx_tgt: continue
         seed = prepare_seed(target_i, seed_i, 'cuda', num_channels = cfg.CHANNEL_N, pool_size = 1024)
         pad_target, height_width = pad_target_func(target_i, cfg.TARGET_PADDING, cfg.device)
         ca, optimizer, scheduler = config_cellular_automata(path_orig, cfg.CHANNEL_N, cfg.CELL_FIRE_RATE, cfg.device, cfg.SCALE_GROWTH,  cfg.model_path, cfg.lr, cfg.betas_0, cfg.betas_1, cfg.lr_gamma)
+        if cfg.wandb: wandb.watch(ca)
         extra_text = f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}_{idx_tgt}'
         loss_log = []
         for i in tqdm(range(cfg.EPOCHS+1)):
@@ -167,7 +166,7 @@ def main_train(cfg: DictConfig):
             x0 = np.repeat(seed[None, ...], cfg.BATCH_SIZE, 0)
             x0 = torch.from_numpy(x0.astype(np.float32)).to(cfg.device)
 
-            x, loss = train(ca, x0, pad_target, np.random.randint(64,96), optimizer, scheduler)
+            x, loss = train(ca, x0, pad_target, np.random.randint(64,96), optimizer, scheduler, cfg.wandb)
             loss_log.append(loss.item())
             log.info(f"loss = {loss.item()}")
 
@@ -178,18 +177,22 @@ def main_train(cfg: DictConfig):
         target_padded = pad_target.detach().cpu().numpy()[0,...,0]
         with torch.no_grad():
             for i in range(cfg.ITER_GROW):
-                grow = ca(grow)
+                grow = ca(grow, scale_growth_synthesis=cfg.SCALE_GROWTH_SYN)
                 if i % (cfg.ITER_GROW // cfg.ITER_SAVE) == 0:
                     grow_img = grow.detach().cpu().numpy()
                     grow_img = np.squeeze(np.clip(grow_img[0,...,:1],0,1))
-                    mse_recons.append(np.mean((grow_img - target_padded)**2))
+                    mse_recons_item = np.mean((grow_img - target_padded)**2)
+                    mse_recons.append(mse_recons_item)
                     grow_sel.append(grow_img)
                     grow_max.append(np.max(grow_img))
+                    if cfg.wandb: 
+                        wandb.log({"mse_recons": mse_recons_item})
+                        wandb.log({"grow_max": np.max(grow_img)})
+        if cfg.wandb: wandb.log({"intense_mse": (10000*loss.item())+(10000*mse_recons_item)+np.max(grow_img) })
         
         max_2k, mse_2k, train_loss_2k, max_10k, mse_10k, train_loss_10k = load_baselines(path_orig, extra_text)
         visualize_batch(x0.detach().cpu().numpy(), x.detach().cpu().numpy(), text=extra_text)
-        plot_loss(loss_log, cfg.SCALE_GROWTH, train_loss_2k, text=extra_text)#, loss_base)
-        plot_max_intensity_and_mse(grow_max, mse_recons, cfg.SCALE_GROWTH, max_base=max_2k, max_base2=max_10k, mse_base=mse_2k, mse_base2=mse_10k, text=extra_text)
+        plot_loss_max_intensity_and_mse(loss_log, train_loss_2k, cfg.SCALE_GROWTH, cfg.SCALE_GROWTH_SYN, grow_max, mse_recons,max_base=max_2k, max_base2=max_10k, mse_base=mse_2k, mse_base2=mse_10k, save_wandb=cfg.wandb, text=extra_text)
         plot_lesion_growing(grow_sel, target_i, cfg.ITER_SAVE, text=f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}')
         print(pad_target.shape, height_width)
 
