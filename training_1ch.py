@@ -1,6 +1,7 @@
 #%% IMPORTS
 import time
 import imageio
+import glob
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,29 +9,150 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-
+from skimage.morphology import remove_small_objects
 from IPython.display import clear_output
-
+import monai
 from lib.CAModel import CAModel
-from lib.utils_vis import SamplePool, to_alpha_1ch, to_rgb_1ch, get_living_mask, make_seed_1ch, make_circle_masks
+from tqdm import tqdm
+from lib.utils_plots import visualize_batch, plot_loss_max_intensity_and_mse, plot_lesion_growing, load_baselines, make_seed_1ch, plot_seeds
+from lib.utils_monai import (load_COVID19_v2,
+                            load_synthetic_lesions,
+                            load_scans,
+                            load_individual_lesions,
+                            load_synthetic_texture)
+from lib.utils_superpixels import (
+    superpixels,
+    make_list_of_targets_and_seeds,
+    fig_superpixels_only_lesions,
+    select_lesions_match_conditions2,
+    boundaries_superpixels,
+    how_large_is_each_segment
+)
 
-# import importlib
-# import lib
-# importlib.reload(lib.CAModel)
+
+
+#%% FUNCTIONS
+def prepare_seed(target, this_seed, device, num_channels = 16, pool_size = 1024):
+    # prepare seed
+    height, width, _ = np.shape(target)
+    seed = np.zeros([height, width, num_channels], np.float32)
+    for i in range(num_channels-1):
+        seed[..., i+1] = this_seed
+    return seed
+
+def config_cellular_automata(orig_dir, CHANNEL_N, CELL_FIRE_RATE, device, SCALE_GROWTH, model_path, lr, betas_0, betas_1, lr_gamma):
+    ca = CAModel(CHANNEL_N, CELL_FIRE_RATE, device, scale_growth=SCALE_GROWTH).to(device)
+    # ca.load_state_dict(torch.load(f'{orig_dir}/{model_path}'))
+
+    optimizer = optim.Adam(ca.parameters(), lr=lr, betas=(betas_0, betas_1))
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, lr_gamma)
+
+    return ca, optimizer, scheduler
+
+def pad_target_func(target_img, padding, device):
+    p = padding
+    pad_target = np.pad(target_img, [(p, p), (p, p), (0, 0)])
+    h, w = pad_target.shape[:2]
+    height_width = [h, w]
+    pad_target = np.expand_dims(pad_target, axis=0)
+    pad_target = torch.from_numpy(pad_target.astype(np.float32)).to(torch.device(device))
+    return pad_target, height_width   
+
+def train(ca, x, target, steps, optimizer, scheduler):
+    """Runs cellular automata (nCA), backpropagates and updates the weights
+
+    Args:
+        ca ([type]): cellular automata model
+        x ([type]): image to update with nCA
+        target ([type]): target image
+        steps ([type]): how many times we update without feedback (1)
+        optimizer (pytorch optim): 
+        scheduler (pytorch scheduler): 
+
+    Returns:
+        x [type]: reconstructed image
+        loss [numpy]: 
+    """
+    x = ca(x, steps=steps)
+    loss = F.mse_loss(x[:, :, :, :2], target)
+    optimizer.zero_grad()
+    loss.backward()
+    # ca.normalize_grads()
+    optimizer.step()
+    scheduler.step()
+    return x, loss
+
+#%% 
+cfg_data_data_folder = '/content/drive/MyDrive/Datasets/covid19/COVID-19-20_v2/Train'
+cfg_data_SCAN_NAME = 'volume-covid19-A-0014'
+cfg_data_BATCH_SIZE = 1
+cfg_data_path_single_lesions = '/content/drive/MyDrive/Datasets/covid19/COVID-19-20/individual_lesions/'
+cfg_data_path_texture = '/content/drive/My Drive/Datasets/covid19/results/cea_synthesis/patient0/'
+cfg_loop_SKIP_LESIONS = -1
+cfg_loop_ONLY_ONE_SLICE = True
+cfg_data_SLICE = 22
+cfg_loop_TRESH_PLOT = 20
+cfg_seed_SEED_VALUE = 0.19
 #%%
-import hydra
-hydra.utils.get_original_cwd()
+images, labels, keys, files_scans = load_COVID19_v2(cfg_data_data_folder, cfg_data_SCAN_NAME)
+name_prefix = load_synthetic_lesions(files_scans, keys, cfg_data_BATCH_SIZE)
+scan, scan_mask = load_scans(files_scans, keys, cfg_data_BATCH_SIZE, cfg_data_SCAN_NAME)
+path_single_lesions = f'{cfg_data_path_single_lesions}{cfg_data_SCAN_NAME}_ct/'
+loader_lesions = load_individual_lesions(path_single_lesions, cfg_data_BATCH_SIZE)
+texture = load_synthetic_texture(cfg_data_path_texture)
+print(scan.shape, scan_mask.shape, texture.shape)
+
+#%% SUPERPIXELS
+mask_sizes=[]
+cluster_sizes = []
+targets_all = []
+flag_slice_found = False
+for idx_mini_batch,mini_batch in enumerate(loader_lesions):
+    if idx_mini_batch < cfg_loop_SKIP_LESIONS:continue #resume incomplete reconstructions
+
+    img = mini_batch['image'].numpy()
+    mask = mini_batch['label'].numpy()
+    mask = remove_small_objects(mask, 20)
+    mask_sizes.append([idx_mini_batch, np.sum(mask)])
+    name_prefix = mini_batch['image_meta_dict']['filename_or_obj'][0].split('/')[-1].split('.npy')[0].split('19-')[-1]
+    img_lesion = img*mask
+
+    # if 2nd argument is provided then only analyze that slice
+    if cfg_loop_ONLY_ONE_SLICE: 
+        slice_used = int(name_prefix.split('_')[-1])
+        if slice_used != int(cfg_data_SLICE): continue
+        else: flag_slice_found = True
+
+    mask_slic, boundaries, segments, numSegments = boundaries_superpixels(img[0], mask[0])
+    segments_sizes = how_large_is_each_segment(segments)
+
+    print(f'img = {np.shape(img)}')
+
+    tgt_minis, tgt_minis_coords, tgt_minis_masks, tgt_minis_big, tgt_minis_coords_big, tgt_minis_masks_big = select_lesions_match_conditions2(segments, img[0], skip_index=0)
+    targets, coords, masks, seeds = make_list_of_targets_and_seeds(tgt_minis, tgt_minis_coords, tgt_minis_masks, seed_value=cfg_seed_SEED_VALUE, seed_method='max')
+    targets_all.append(len(targets))
+
+    coords_big = [int(i) for i in name_prefix.split('_')[1:]]
+    fig_superpixels_only_lesions('./', name_prefix, scan, scan_mask, img, mask_slic, boundaries, segments, segments_sizes, coords_big, cfg_loop_TRESH_PLOT, idx_mini_batch, numSegments, save=False)
+    if flag_slice_found: break
+
+if flag_slice_found:
+    plot_seeds(targets,seeds, save=False)
+    for i in targets:
+        print(f'targets_shape = {i.shape}')
+else:
+    print('SLICE HAS NO LESIONS')
+
 #%%
-def load_baselines(path_orig, extra_text, path='outputs/baselines/'):
-    files = os.listdir(f'{path_orig}/{path}')
-    outputs = []
-    for key in ['max_syn_SG=1_ep=2k', 'mse_syn_SG=1_ep=2k', 'train_loss_SG=1_ep=2k', 'max_syn_SG=1_ep=10k', 'mse_syn_SG=1_ep=10k', 'train_loss_SG=1_ep=10k']:
-        file = f'{key}{extra_text}.npy'
-        if file in files:
-            outputs.append(np.load(f'{path_orig}/{path}{file}'))
-        else:
-            outputs.append(-1)
-    return outputs 
+mask_slic, boundaries, segments, numSegments = boundaries_superpixels(img[0], mask[0])
+len(segments), numSegments
+tgt_minis, tgt_minis_coords, tgt_minis_masks, tgt_minis_big, tgt_minis_coords_big, tgt_minis_masks_big = select_lesions_match_conditions2(segments, img[0], skip_index=0)
+targets, coords, masks, seeds = make_list_of_targets_and_seeds(tgt_minis, tgt_minis_coords, tgt_minis_masks, seed_value=cfg_seed_SEED_VALUE, seed_method='max')
+len(targets), targets[0].shape
+
+
+
+
 #%%
 path_orig = './'
 extra_text = '_volume-covid19-A-0014_34_2'

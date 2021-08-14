@@ -131,7 +131,7 @@ targets, coords_big, TRESH_P, idx_mini_batch, numSegments):
     fig_slic.tight_layout()
     fig_slic.savefig(f'{path_synthesis_figs}{name_prefix}_slic.png') 
 
-def fig_superpixels_only_lesions(path_synthesis_figs, name_prefix, scan, scan_mask, img, mask_slic, boundaries_plot, segments, segments_sizes, coords_big, TRESH_P, idx_mini_batch, numSegments):
+def fig_superpixels_only_lesions(path_synthesis_figs, name_prefix, scan, scan_mask, img, mask_slic, boundaries_plot, segments, segments_sizes, coords_big, TRESH_P, idx_mini_batch, numSegments, save=True):
     '''plot 2 rows'''
     fig_slic, ax = plt.subplots(2,3, figsize=(12,8))
     ax[0,0].imshow(scan[...,coords_big[-1]], vmin=-1000, vmax=500)
@@ -148,7 +148,8 @@ def fig_superpixels_only_lesions(path_synthesis_figs, name_prefix, scan, scan_ma
     ax[1,2].imshow(mask_slic*img[0], vmax=1)
     ax[1,2].text(5,10,f'lesion\nnSegm={numSegments}',c='r', fontsize=12)
     fig_slic.tight_layout()
-    fig_slic.savefig(f'{path_synthesis_figs}{name_prefix}_slic.png')    
+    if save:
+        fig_slic.savefig(f'{path_synthesis_figs}{name_prefix}_slic.png')    
 
 def boundaries_superpixels(img, mask):
     mask = remove_small_objects(mask, 20)

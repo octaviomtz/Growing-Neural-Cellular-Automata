@@ -86,7 +86,7 @@ def train(ca, x, target, steps, optimizer, scheduler, cfg_wandb):
     # ca.normalize_grads()
     optimizer.step()
     scheduler.step()
-    if cfg_wandb: wandb.log({"train_loss": loss})
+    # if cfg_wandb: wandb.log({"train_loss": loss})
     return x, loss
 
 
@@ -94,8 +94,8 @@ def train(ca, x, target, steps, optimizer, scheduler, cfg_wandb):
 def main_train(cfg: DictConfig):
     # WEIGHTS AND BIASES
     hyperparams_default = {'SCALE_GROWTH':cfg.SCALE_GROWTH, 'SCALE_GROWTH_SYN':cfg.SCALE_GROWTH_SYN,'lr':cfg.lr,'wandb':True}
-    if cfg.wandb:
-        wandb.init(project='cellaut_grid_search', entity='octaviomtz', config=hyperparams_default)
+    if cfg.wandb.save:
+        wandb.init(project=cfg.wandb.name, entity='octaviomtz', config=hyperparams_default)
         config = wandb.config
         wandb_omega_config = OmegaConf.create(wandb.config._as_dict())
         cfg.SCALE_GROWTH = wandb_omega_config.SCALE_GROWTH
@@ -118,7 +118,7 @@ def main_train(cfg: DictConfig):
     mask_sizes=[]
     cluster_sizes = []
     targets_all = []
-    flag_only_one_slice = False
+    flag_slice_found = False
     for idx_mini_batch,mini_batch in enumerate(loader_lesions):
         if idx_mini_batch < cfg.loop.SKIP_LESIONS:continue #resume incomplete reconstructions
 
@@ -130,10 +130,10 @@ def main_train(cfg: DictConfig):
         img_lesion = img*mask
 
         # if 2nd argument is provided then only analyze that slice
-        if cfg.loop.ONLY_ONE_SLICE != -1: 
+        if cfg.loop.ONLY_ONE_SLICE: 
             slice_used = int(name_prefix.split('_')[-1])
-            if slice_used != int(cfg.loop.ONLY_ONE_SLICE): continue
-            else: flag_only_one_slice = True
+            if slice_used != int(cfg.data.SLICE): continue
+            else: flag_slice_found = True
 
         mask_slic, boundaries, segments, numSegments = boundaries_superpixels(img[0], mask[0])
         segments_sizes = how_large_is_each_segment(segments)
@@ -146,60 +146,65 @@ def main_train(cfg: DictConfig):
 
         coords_big = [int(i) for i in name_prefix.split('_')[1:]]
         fig_superpixels_only_lesions('./', name_prefix, scan, scan_mask, img, mask_slic, boundaries, segments, segments_sizes, coords_big, cfg.loop.TRESH_PLOT, idx_mini_batch, numSegments)
-        if flag_only_one_slice: break
-    plot_seeds(targets,seeds)
+        if flag_slice_found: break
     
-    for i in targets:
-        print(i.shape)
+    if flag_slice_found:
+        plot_seeds(targets,seeds)
+        for i in targets:
+            print(i.shape)
     
     # CELLULAR AUTOMATA
-    for idx_tgt, (target_i, seed_i) in enumerate(zip(targets,seeds)):
-        if cfg.loop.ONLY_ONE_LESION != False and cfg.loop.ONLY_ONE_LESION != idx_tgt: continue
-        seed = prepare_seed(target_i, seed_i, 'cuda', num_channels = cfg.CHANNEL_N, pool_size = 1024)
-        pad_target, height_width = pad_target_func(target_i, cfg.TARGET_PADDING, cfg.device)
-        ca, optimizer, scheduler = config_cellular_automata(path_orig, cfg.CHANNEL_N, cfg.CELL_FIRE_RATE, cfg.device, cfg.SCALE_GROWTH,  cfg.model_path, cfg.lr, cfg.betas_0, cfg.betas_1, cfg.lr_gamma)
-        if cfg.wandb: wandb.watch(ca)
-        extra_text = f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}_{idx_tgt}'
-        loss_log = []
-        for i in tqdm(range(cfg.EPOCHS+1)):
-        
-            x0 = np.repeat(seed[None, ...], cfg.BATCH_SIZE, 0)
-            x0 = torch.from_numpy(x0.astype(np.float32)).to(cfg.device)
+    if flag_slice_found:
+        for idx_tgt, (target_i, seed_i) in enumerate(zip(targets,seeds)):
+            if cfg.loop.ONLY_ONE_LESION != False and cfg.loop.ONLY_ONE_LESION != idx_tgt: continue
+            seed = prepare_seed(target_i, seed_i, 'cuda', num_channels = cfg.CHANNEL_N, pool_size = 1024)
+            pad_target, height_width = pad_target_func(target_i, cfg.TARGET_PADDING, cfg.device)
+            ca, optimizer, scheduler = config_cellular_automata(path_orig, cfg.CHANNEL_N, cfg.CELL_FIRE_RATE, cfg.device, cfg.SCALE_GROWTH,  cfg.model_path, cfg.lr, cfg.betas_0, cfg.betas_1, cfg.lr_gamma)
+            if cfg.wandb.save: wandb.watch(ca)
+            extra_text = f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}_{idx_tgt}'
+            loss_log = []
+            for i in tqdm(range(cfg.EPOCHS+1)):
+            
+                x0 = np.repeat(seed[None, ...], cfg.BATCH_SIZE, 0)
+                x0 = torch.from_numpy(x0.astype(np.float32)).to(cfg.device)
 
-            x, loss = train(ca, x0, pad_target, np.random.randint(64,96), optimizer, scheduler, cfg.wandb)
-            loss_log.append(loss.item())
-            log.info(f"loss = {loss.item()}")
+                x, loss = train(ca, x0, pad_target, np.random.randint(64,96), optimizer, scheduler, cfg.wandb.save)
+                loss_log.append(loss.item())
+                log.info(f"loss = {loss.item()}")
+                if cfg.wandb.save: wandb.log({"train_loss":loss.item()})
+            # RECONSTRUCTION
+            grow = torch.tensor(seed).unsqueeze(0).to(cfg.device)
+            grow_sel = []
+            grow_max = []
+            mse_recons = []
+            target_padded = pad_target.detach().cpu().numpy()[0,...,0]
+            with torch.no_grad():
+                for i in range(cfg.ITER_GROW):
+                    grow = ca(grow, scale_growth_synthesis=cfg.SCALE_GROWTH_SYN)
+                    if i % (cfg.ITER_GROW // cfg.ITER_SAVE) == 0:
+                        grow_img = grow.detach().cpu().numpy()
+                        grow_img = np.squeeze(np.clip(grow_img[0,...,:1],0,1))
+                        mse_recons_item = np.mean((grow_img - target_padded)**2)
+                        mse_recons.append(mse_recons_item)
+                        grow_sel.append(grow_img)
+                        grow_max.append(np.max(grow_img))
+                        if cfg.wandb.save: 
+                            wandb.log({"mse_recons": mse_recons_item})
+                            wandb.log({"grow_max": np.max(grow_img)})
+            if cfg.wandb.save: wandb.log({"intense_mse": (10000*loss.item())+(10000*mse_recons_item)+np.max(grow_img) })
+            
+            max_2k, mse_2k, train_loss_2k, max_10k, mse_10k, train_loss_10k = load_baselines(path_orig, extra_text)
+            visualize_batch(x0.detach().cpu().numpy(), x.detach().cpu().numpy(), text=extra_text)
+            plot_loss_max_intensity_and_mse(loss_log, train_loss_2k, cfg.SCALE_GROWTH, cfg.SCALE_GROWTH_SYN, grow_max, mse_recons,max_base=max_2k, max_base2=max_10k, mse_base=mse_2k, mse_base2=mse_10k, save_wandb=cfg.wandb.save, text=extra_text)
+            plot_lesion_growing(grow_sel, target_i, cfg.ITER_SAVE, text=f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}')
+            print('SYNTHESIS COMPLETED', pad_target.shape, height_width)
 
-        grow = torch.tensor(seed).unsqueeze(0).to(cfg.device)
-        grow_sel = []
-        grow_max = []
-        mse_recons = []
-        target_padded = pad_target.detach().cpu().numpy()[0,...,0]
-        with torch.no_grad():
-            for i in range(cfg.ITER_GROW):
-                grow = ca(grow, scale_growth_synthesis=cfg.SCALE_GROWTH_SYN)
-                if i % (cfg.ITER_GROW // cfg.ITER_SAVE) == 0:
-                    grow_img = grow.detach().cpu().numpy()
-                    grow_img = np.squeeze(np.clip(grow_img[0,...,:1],0,1))
-                    mse_recons_item = np.mean((grow_img - target_padded)**2)
-                    mse_recons.append(mse_recons_item)
-                    grow_sel.append(grow_img)
-                    grow_max.append(np.max(grow_img))
-                    if cfg.wandb: 
-                        wandb.log({"mse_recons": mse_recons_item})
-                        wandb.log({"grow_max": np.max(grow_img)})
-        if cfg.wandb: wandb.log({"intense_mse": (10000*loss.item())+(10000*mse_recons_item)+np.max(grow_img) })
-        
-        max_2k, mse_2k, train_loss_2k, max_10k, mse_10k, train_loss_10k = load_baselines(path_orig, extra_text)
-        visualize_batch(x0.detach().cpu().numpy(), x.detach().cpu().numpy(), text=extra_text)
-        plot_loss_max_intensity_and_mse(loss_log, train_loss_2k, cfg.SCALE_GROWTH, cfg.SCALE_GROWTH_SYN, grow_max, mse_recons,max_base=max_2k, max_base2=max_10k, mse_base=mse_2k, mse_base2=mse_10k, save_wandb=cfg.wandb, text=extra_text)
-        plot_lesion_growing(grow_sel, target_i, cfg.ITER_SAVE, text=f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}')
-        print(pad_target.shape, height_width)
-
-        if cfg.SAVE_NUMPY:
-            np.save(f'train_loss_SG=1_ep={cfg.EPOCHS//1000}k{extra_text}.npy', loss_log)
-            np.save(f'max_syn_SG=1_ep={cfg.EPOCHS//1000}k{extra_text}.npy', grow_max)
-            np.save(f'mse_syn_SG=1_ep={cfg.EPOCHS//1000}k{extra_text}.npy', mse_recons)
+            if cfg.SAVE_NUMPY:
+                np.save(f'train_loss_SG=1_ep={cfg.EPOCHS//1000}k{extra_text}.npy', loss_log)
+                np.save(f'max_syn_SG=1_ep={cfg.EPOCHS//1000}k{extra_text}.npy', grow_max)
+                np.save(f'mse_syn_SG=1_ep={cfg.EPOCHS//1000}k{extra_text}.npy', mse_recons)
+    else:
+        print('SLICE HAS NO LESIONS')
 
 if __name__ == "__main__":
     main_train()

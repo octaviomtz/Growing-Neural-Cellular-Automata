@@ -25,6 +25,11 @@ We use Hydra to handle different configurations:
 1. Hydra saves the results (images, logs, arrays, etc) in individual folders:
     ![hydra_folders](/images_github/hydra_folders.png?raw=true)
 
+1. For multiple runs just add commas and the --multirun flag
+    ```bash
+    python3 train_1ch.py data.SLICE=18,19,20,21,22 wandb.name=covid_A-0014 --multirun
+    ```
+
 ## Hyperparameter optimization
 
 We use WANDB _sweeps_ to handle hyperparameter optimization.

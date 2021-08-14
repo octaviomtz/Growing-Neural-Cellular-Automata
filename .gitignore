@@ -5,3 +5,4 @@ temp_*
 multirun/*
 wandb/*
 outputs/*
+notes.md

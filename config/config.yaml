@@ -19,7 +19,9 @@ lr_gamma: 0.9999
 ITER_GROW: 60
 ITER_SAVE: 30
 
-wandb: True
+wandb:
+  save: True
+  name: cell_auto
 
 SAVE_NUMPY: False
 
@@ -33,9 +35,9 @@ data:
 
 loop:
   SKIP_LESIONS: -1
-  ONLY_ONE_SLICE: 34
+  ONLY_ONE_SLICE: True
   TRESH_PLOT: 20
-  ONLY_ONE_LESION: 1
+  ONLY_ONE_LESION: 0
 
 seed:
   SEED_VALUE: 0.19
