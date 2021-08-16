@@ -29,6 +29,10 @@ We use Hydra to handle different configurations:
     ```bash
     python3 train_1ch.py data.SLICE=18,19,20,21,22 wandb.name=covid_A-0014 --multirun
     ```
+1. For a dry run make sure the _temp_delete_ folder exists
+    ```
+    python3 train_1ch.py data.SLICE=34 wandb.save=False hydra.run.dir=temp_delete hydra.output_subdir=null hydra/job_logging=disabled hydra/hydra_logging=disabled
+    ```
 
 ## Hyperparameter optimization
 

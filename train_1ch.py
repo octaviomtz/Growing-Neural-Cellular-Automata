@@ -19,7 +19,13 @@ import hydra
 from omegaconf import DictConfig, OmegaConf
 import logging
 
-from lib.utils_plots import visualize_batch, plot_loss_max_intensity_and_mse, plot_lesion_growing, load_baselines, make_seed_1ch, plot_seeds
+from lib.utils_plots import (visualize_batch,
+                            plot_loss_max_intensity_and_mse,
+                            plot_lesion_growing,
+                            load_baselines,
+                            make_seed_1ch,
+                            plot_seeds,
+                            save_cell_auto_reconstruction_vars)
 from lib.utils_monai import (load_COVID19_v2,
                             load_synthetic_lesions,
                             load_scans,
@@ -155,13 +161,13 @@ def main_train(cfg: DictConfig):
     
     # CELLULAR AUTOMATA
     if flag_slice_found:
-        for idx_tgt, (target_i, seed_i) in enumerate(zip(targets,seeds)):
-            if cfg.loop.ONLY_ONE_LESION != False and cfg.loop.ONLY_ONE_LESION != idx_tgt: continue
-            seed = prepare_seed(target_i, seed_i, 'cuda', num_channels = cfg.CHANNEL_N, pool_size = 1024)
-            pad_target, height_width = pad_target_func(target_i, cfg.TARGET_PADDING, cfg.device)
+        for idx_lesion, (target, coord, mask, this_seed) in enumerate(zip(targets, coords, masks, seeds)):
+            if cfg.loop.ONLY_ONE_LESION != False and cfg.loop.ONLY_ONE_LESION != idx_lesion: continue
+            seed = prepare_seed(target, this_seed, 'cuda', num_channels = cfg.CHANNEL_N, pool_size = 1024)
+            pad_target, height_width = pad_target_func(target, cfg.TARGET_PADDING, cfg.device)
             ca, optimizer, scheduler = config_cellular_automata(path_orig, cfg.CHANNEL_N, cfg.CELL_FIRE_RATE, cfg.device, cfg.SCALE_GROWTH,  cfg.model_path, cfg.lr, cfg.betas_0, cfg.betas_1, cfg.lr_gamma)
             if cfg.wandb.save: wandb.watch(ca)
-            extra_text = f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}_{idx_tgt}'
+            extra_text = f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}_{idx_lesion}'
             loss_log = []
             for i in tqdm(range(cfg.EPOCHS+1)):
             
@@ -184,6 +190,7 @@ def main_train(cfg: DictConfig):
                     if i % (cfg.ITER_GROW // cfg.ITER_SAVE) == 0:
                         grow_img = grow.detach().cpu().numpy()
                         grow_img = np.squeeze(np.clip(grow_img[0,...,:1],0,1))
+                        grow_img = grow_img * mask
                         mse_recons_item = np.mean((grow_img - target_padded)**2)
                         mse_recons.append(mse_recons_item)
                         grow_sel.append(grow_img)
@@ -192,11 +199,12 @@ def main_train(cfg: DictConfig):
                             wandb.log({"mse_recons": mse_recons_item})
                             wandb.log({"grow_max": np.max(grow_img)})
             if cfg.wandb.save: wandb.log({"intense_mse": (10000*loss.item())+(10000*mse_recons_item)+np.max(grow_img) })
-            
+            print(f'grow_img={grow_img.shape}, mask={mask.shape}')
             max_2k, mse_2k, train_loss_2k, max_10k, mse_10k, train_loss_10k = load_baselines(path_orig, extra_text)
             visualize_batch(x0.detach().cpu().numpy(), x.detach().cpu().numpy(), text=extra_text)
             plot_loss_max_intensity_and_mse(loss_log, train_loss_2k, cfg.SCALE_GROWTH, cfg.SCALE_GROWTH_SYN, grow_max, mse_recons,max_base=max_2k, max_base2=max_10k, mse_base=mse_2k, mse_base2=mse_10k, save_wandb=cfg.wandb.save, text=extra_text)
-            plot_lesion_growing(grow_sel, target_i, cfg.ITER_SAVE, text=f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}')
+            plot_lesion_growing(grow_sel, target, cfg.ITER_SAVE, text=f'_{cfg.data.SCAN_NAME}_{cfg.data.SLICE}')
+            if cfg.save_reconstruction: save_cell_auto_reconstruction_vars(grow_sel, coord, mask, loss_log, name_prefix, idx_lesion)
             print('SYNTHESIS COMPLETED', pad_target.shape, height_width)
 
             if cfg.SAVE_NUMPY:
@@ -205,6 +213,9 @@ def main_train(cfg: DictConfig):
                 np.save(f'mse_syn_SG=1_ep={cfg.EPOCHS//1000}k{extra_text}.npy', mse_recons)
     else:
         print('SLICE HAS NO LESIONS')
+
+
+
 
 if __name__ == "__main__":
     main_train()

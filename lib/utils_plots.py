@@ -128,4 +128,9 @@ def plot_seeds(targets,seeds, save=True):
     if save:
         plt.savefig('seeds.png')
 
-    
+def save_cell_auto_reconstruction_vars(grow_sel, coord, mask, losses, name_prefix, idx_lesion):
+    outs_float = np.asarray(grow_sel)
+    np.savez_compressed(f'{name_prefix}_lesion_{idx_lesion:02d}.npz', outs_float)
+    np.save(f'{name_prefix}_coords_{idx_lesion:02d}.npy', coord)
+    np.savez_compressed(f'{name_prefix}_mask_{idx_lesion:02d}.npz', mask)
+    np.save(f'{name_prefix}_loss_{idx_lesion:02d}.npy', losses)
