@@ -3,7 +3,18 @@ Experimenting with different parameters of the Cellular Automata on 1-channel im
 
 Based on the pytorch implementation (github.com/chenmingxiang110/Growing-Neural-Cellular-Automata) of the nCA developed by _**Mordvintsev A.**, et al., "Growing Neural Cellular Automata", Distill, 2020._
 
-## Single Run
+## Use:
+1. To segment (if needed) and train a nCA on the segmented parts of a lesion run
+    ```bash
+    python3 train_1ch.py 
+    ```
+1. To insert the synthetic lesions produced by nCA run
+    ```bash
+    # make sure path_synthesis points to the folder with the results produced by (1)
+    python3 replace_lesion.py 
+    ```
+
+## Single Runs
 We use Hydra to handle different configurations:
 1. We save the default parameters in _config/config.yaml_ 
     ```yaml
