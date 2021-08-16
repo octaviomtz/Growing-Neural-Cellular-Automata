@@ -75,8 +75,8 @@ def load_synthetic_lesions(files_scans, keys, batch_size):
         name_prefix = mini_batch['image_meta_dict']['filename_or_obj'][0].split('Train/')[-1].split('.nii')[0]
         return name_prefix
 
-def load_scans(files_scans, keys, batch_size, SCAN_NAME):
-    transforms_load = get_xforms_scans_or_synthetic_lesions("scans", keys)
+def load_scans(files_scans, keys, batch_size, SCAN_NAME, mode="scans"):
+    transforms_load = get_xforms_scans_or_synthetic_lesions(mode, keys)
     ds_scans = monai.data.CacheDataset(data=files_scans, transform=transforms_load)
     loader_scans = monai.data.DataLoader(
             ds_scans,
