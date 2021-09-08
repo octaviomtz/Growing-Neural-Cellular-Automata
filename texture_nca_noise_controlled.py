@@ -1,7 +1,6 @@
 #%%
 import os
 import io
-from texture_nca import style_loss
 import PIL.Image, PIL.ImageDraw
 import base64
 import zipfile
@@ -86,6 +85,7 @@ lr_sched = torch.optim.lr_scheduler.MultiStepLR(opt, [2000], 0.3)
 loss_log = []
 with torch.no_grad():
   pool = ca.seed(1024)
+
 # %%
 #@title training loop {vertical-output: true}
 for i in range(5000):
@@ -128,3 +128,51 @@ for i in range(5000):
         'overflow:', overflow_loss.item(), end='')
 
 # %%
+with VideoWriter('noise_ca.mp4') as vid, torch.no_grad():
+  noise = 0.5-0.5*torch.linspace(0, np.pi*2.0, 256).cos()
+  noise *= 0.02
+  x = torch.zeros(1, ca.chn, 128, 256)
+  for k in tnrange(600, leave=False):
+    step_n = 16
+    frame_noise = noise if k<200 or k>400 else noise.max()-noise
+    for i in range(step_n):
+      x[:] = ca(x, noise=frame_noise)
+      img = to_rgb(x[0]).permute(1, 2, 0).cpu()
+    vid.add(zoom(img, 2))
+vid.show(loop=True)
+# %%
+h, w = 1080//2, 1920//2
+mask = PIL.Image.new('L', (w, h))
+draw = PIL.ImageDraw.Draw(mask)
+font = PIL.ImageFont.truetype('/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf', 300)
+draw  = PIL.ImageDraw.Draw(mask)
+draw.text((20, 100), 'NOISE', fill=255, font=font, align='center')
+noise = torch.tensor(np.float32(mask)/255.0*0.02)
+mask
+#%%
+h, w = 1080//2, 1920//2
+
+with VideoWriter('title.mp4') as vid, torch.no_grad():
+  x = torch.zeros(1, ca.chn, h, w)
+  for k in tnrange(1000, leave=False):
+    x[:] = ca(x, noise=noise)
+  for k in tnrange(600, leave=False):
+    for k in range(10):
+      x[:] = ca(x, noise=noise)
+    img = to_rgb(x[0]).permute(1, 2, 0).cpu()
+    vid.add(img)
+vid.show(loop=True)
+# %%
+
+#%% TEMP
+print(pool.shape)
+fig, ax = pl.subplots(4,3, figsize=(12,12))
+for i in range(12):
+    ax.flat[i].imshow(pool.cpu()[0,i,...])
+    # ax.flat[i].hist(pool.cpu()[0,i,...].flatten())
+
+#%% TEMP
+print(noise_mask)
+print(noise_mask.reshape(-1, 1, 1, 1).shape)
+print(imgs.shape)
+print(batch_targets[0].shape)

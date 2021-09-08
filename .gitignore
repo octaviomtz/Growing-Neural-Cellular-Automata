@@ -7,3 +7,5 @@ wandb/*
 outputs/*
 notes.md
 lib/__pycache__/*
+*.mp4
+__pycache__/*
