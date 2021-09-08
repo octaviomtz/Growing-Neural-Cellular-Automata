@@ -6,3 +6,4 @@ multirun/*
 wandb/*
 outputs/*
 notes.md
+lib/__pycache__/*
