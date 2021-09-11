@@ -162,41 +162,7 @@ with VideoWriter('title.mp4') as vid, torch.no_grad():
     img = to_rgb(x[0]).permute(1, 2, 0).cpu()
     vid.add(img)
 vid.show(loop=True)
+
+#%%
+
 # %%
-
-#%% EXTRA
-import scipy
-from lib.utils_monai import (load_COVID19_v2,
-                            load_synthetic_lesions,
-                            load_scans,
-                            )
-from lib.utils_lung_segmentation import get_segmented_lungs, get_max_rect_in_polygon
-from skimage.morphology import disk, binary_closing
-
-data_folder = '/content/drive/MyDrive/Datasets/covid19/COVID-19-20_v2/Train'
-SCAN_NAME = 'volume-covid19-A-0014'
-SLICE=34
-torch.set_default_tensor_type('torch.FloatTensor') 
-images, labels, keys, files_scans = load_COVID19_v2(data_folder, SCAN_NAME)
-scan, scan_mask = load_scans(files_scans, keys, 1, SCAN_NAME,mode="synthetic")
-scan_slice = scan[...,SLICE]
-scan_slice_copy = copy(scan_slice)
-scan_slice_segm = get_segmented_lungs(scan_slice_copy)
-im4 = (scan_slice_segm > 0) & (scan_slice_segm < .3)
-selem = disk(1)
-im5 = binary_closing(im4, selem)
-my_label, num_label = scipy.ndimage.label(im5)
-size = np.bincount(my_label.ravel())
-biggest_label = size[1:].argmax() + 1
-clump_mask = my_label == biggest_label
-HEIGHT, WIDTH, Y2, X1, X2, hist_max = get_max_rect_in_polygon(clump_mask, value=1)
-Y1 = Y2 - HEIGHT
-X2 = X1 + WIDTH
-rect = patches.Rectangle((X1, Y1), WIDTH, HEIGHT, linewidth=1, edgecolor='r', facecolor='none')
-lung_sample = np.clip(scan_slice[Y1:Y2, X1:X2]*3, 0, 1)
-fig, ax = pl.subplots(2,3,figsize=(12,4))
-ax[0,0].imshow(scan_slice)
-ax[0,1].imshow(scan_slice_segm)
-ax[1,0].imshow(im4)
-ax[1,1].imshow(im5)
-ax[1,2].imshow(clump_mask)

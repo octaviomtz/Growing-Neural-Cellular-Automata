@@ -8,6 +8,7 @@ from collections import namedtuple
 from operator import mul
 from functools import reduce
 import numpy as np
+import scipy
 
 def get_segmented_lungs(im, thresh=.5):
     """This funtion segments the lungs from the given 2D slice.
@@ -113,3 +114,87 @@ def area(size):
 
 def square(x):
     return x ** 2
+
+def get_max_rect_in_mask(mask):
+    '''https://stackoverflow.com/questions/2478447/
+    find-largest-rectangle-containing-only-zeros-in-an-n%C3%97n-binary-matrix'''
+    skip = 0
+    area_max = (0, [])
+    a = mask
+    nrows, ncols = a.shape
+    nrows, ncols
+    w = np.zeros(dtype=int, shape=a.shape)
+    h = np.zeros(dtype=int, shape=a.shape)
+    for r in range(nrows):
+        for c in range(ncols):
+            if a[r][c] == skip:
+                continue
+            if r == 0:
+                h[r][c] = 0
+            else:
+                h[r][c] = h[r-1][c]+1
+            if c == 0:
+                w[r][c] = 0
+            else:
+                w[r][c] = w[r][c-1]+1
+            minw = w[r][c]
+            for dh in range(h[r][c]):
+                minw = min(minw, w[r-dh][c])
+                area = (dh+1)*minw
+                if area > area_max[0]:
+                    area_max = (area, [(r-dh, c-minw+1, r, c)])
+
+    # print('area', area_max[0])
+    # for t in area_max[1]:
+    #     print('Cell 1:({}, {}) and Cell 2:({}, {})'.format(*t))
+    return area_max[1][0]
+
+def get_roi_from_each_lung(scan_slice_segm, thres0=0, thres1=.3, disk_close=True):
+    '''find masks that contain roi of each lung (pixels within a threshold), 
+    and return them separately'''
+    im4 = (scan_slice_segm > 0) & (scan_slice_segm < .3)
+    if disk_close==True:
+        selem = disk(1)
+        im4 = binary_closing(im4, selem)
+    my_label, num_label = scipy.ndimage.label(im4)
+    size = np.bincount(my_label.ravel())
+    biggest_label = size[1:].argmax() + 1
+    lung0 = my_label == biggest_label    
+    biggest_label = size[1:].argmax() + 2
+    lung1 = my_label == biggest_label    
+    return lung0, lung1
+
+def make_mosaic_of_rects(all_rects, lung_samples2, bin0):
+    '''make a mosaic from all the rectangles (all_rects) obtained 
+    with a packer from rectpack'''
+    mosaic = np.zeros(bin0)
+    idx_error = []
+    shape_lung = []
+    shape_rec = []
+    conds = []
+    coords_error=[]
+    for rec_idx, rec in enumerate(all_rects):
+        if rec[0]==0:# check only first bin
+            if (rec[4],rec[3]) == lung_samples2[rec[5]].shape:
+                try:
+                    mosaic[rec[2]:rec[2]+rec[4], rec[1]:rec[1]+rec[3]] = lung_samples2[rec[5]]
+                except ValueError:
+                    idx_error.append(rec_idx)
+                    shape_lung.append(lung_samples2[rec[5]].shape)
+                    shape_rec.append((rec[4],rec[3]))
+                    conds.append(0)
+                    coords_error.append((rec[2]+rec[4], rec[1]+rec[3]))
+                    continue
+            else:
+                swapped = np.swapaxes(lung_samples2[rec[5]],0,1)
+                try:
+                    mosaic[rec[2]:rec[2]+rec[4], rec[1]:rec[1]+rec[3]] = swapped
+                except ValueError:
+                    idx_error.append(rec_idx)
+                    shape_lung.append(swapped.shape)
+                    shape_rec.append((rec[4],rec[3]))
+                    conds.append(1)
+                    coords_error.append((rec[2]+rec[4], rec[1]+rec[3]))
+                    continue
+    other_vars = [conds, shape_lung, shape_rec, coords_error]
+    return mosaic, other_vars
