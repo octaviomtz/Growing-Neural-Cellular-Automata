@@ -26,6 +26,8 @@ torch.set_default_tensor_type('torch.cuda.FloatTensor')
 from lib.utils_texture_nca import (imread, np2pil, imwrite, imencode, im2url, imshow, tile2d, zoom, VideoWriter)
 from lib.utils_texture_nca import calc_styles, to_nchw, style_loss
 
+from lib.utils_lung_segmentation import find_closest_cluster, find_texture_relief
+
 #%% title Minimalistic Neural CA
 ident = torch.tensor([[0.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,0.0]])
 sobel_x = torch.tensor([[-1.0,0.0,1.0],[-2.0,0.0,2.0],[-1.0,0.0,1.0]])
@@ -72,11 +74,26 @@ style_urls = [
   'https://www.robots.ox.ac.uk/~vgg/data/dtd/thumbs/bubbly/bubbly_0101.jpg',
   'https://www.robots.ox.ac.uk/~vgg/data/dtd/thumbs/chequered/chequered_0121.jpg'
 ]
-
 style_imgs = [imread(url, max_size=128) for url in style_urls]
 with torch.no_grad():
     target_styles = calc_styles(to_nchw(style_imgs))
 imshow(np.hstack(style_imgs))
+
+#%%
+# print(style_imgs[0].shape)
+texture_lungs = np.load('data/texture_lung_inpainted.npy')
+texture_lesion = np.load('data/texture_lesion2_inpain.npy')
+texture_lesion = texture_lesion[0]
+print(texture_lungs.shape, texture_lesion.shape)
+texture_lungs = np.moveaxis(texture_lungs,0,-1) 
+# texture_lesion = np.moveaxis(texture_lesion,0,-1)
+texture_lungs = texture_lungs[:128,:128,:]
+texture_lesion = texture_lesion[:128,:128,:]
+style_imgs = [texture_lungs, texture_lesion]
+with torch.no_grad():
+    target_styles = calc_styles(to_nchw(style_imgs))
+imshow(np.hstack(style_imgs))
+
 # %%
 #@title setup training
 ca = CA() 
@@ -127,8 +144,11 @@ for i in range(5000):
         ' lr:', lr_sched.get_lr()[0],
         'overflow:', overflow_loss.item(), end='')
 
+#%%
+torch.save(ca, 'data/ca_lungs_covid2.pt')
+
 # %%
-with VideoWriter('noise_ca.mp4') as vid, torch.no_grad():
+with VideoWriter('noise_ca_lungs_lesion_.mp4') as vid, torch.no_grad():
   noise = 0.5-0.5*torch.linspace(0, np.pi*2.0, 256).cos()
   noise *= 0.02
   x = torch.zeros(1, ca.chn, 128, 256)
@@ -146,13 +166,13 @@ mask = PIL.Image.new('L', (w, h))
 draw = PIL.ImageDraw.Draw(mask)
 font = PIL.ImageFont.truetype('/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf', 300)
 draw  = PIL.ImageDraw.Draw(mask)
-draw.text((20, 100), 'NOISE', fill=255, font=font, align='center')
+draw.text((20, 100), 'COVID', fill=255, font=font, align='center')
 noise = torch.tensor(np.float32(mask)/255.0*0.02)
 mask
+
 #%%
 h, w = 1080//2, 1920//2
-
-with VideoWriter('title.mp4') as vid, torch.no_grad():
+with VideoWriter('covid_x2.mp4') as vid, torch.no_grad():
   x = torch.zeros(1, ca.chn, h, w)
   for k in tnrange(1000, leave=False):
     x[:] = ca(x, noise=noise)
@@ -163,6 +183,121 @@ with VideoWriter('title.mp4') as vid, torch.no_grad():
     vid.add(img)
 vid.show(loop=True)
 # %%
+
+#%% LOAD TRAINED MODEL
+ca = torch.load('data/ca_lungs_covid2.pt')
+
+#%%
+texture_lesion = np.load('data/texture_lesion_inpainted.npy')
+aa = texture_lesion[0,100:150,100:150]
+labelled_boundaries, labelled, area_mod = find_texture_relief(aa)
+
+fig, ax = pl.subplots(1,3, figsize=(12,8))
+ax[0].imshow(aa)
+ax[1].imshow(area_mod)
+ax[2].imshow(labelled_boundaries)
+
+#%%
+LAB=15
+# pl.imshow(labelled_boundaries==LAB)
+growing_cluster2 = []
+growing_cluster2.append((labelled==LAB)*area_mod)
+for i in range(np.unique(labelled)[-1]-1):
+    clus_number, clus_coord = find_closest_cluster(labelled_boundaries, LAB)
+    labelled_boundaries[np.where(labelled_boundaries == clus_number)]=LAB
+    labelled[np.where(labelled == clus_number)]=LAB
+    labeles_joined = (labelled==LAB)
+    growing_cluster2.append(labeles_joined*area_mod)
+fig, ax = pl.subplots(6,6, figsize=(6,6))
+for i in range(36):
+
+    ax.flat[i].imshow(growing_cluster2[i])
+    ax.flat[i].axis('off')
+
+#%% JUST ONE CLUSTER
+from scipy.ndimage import distance_transform_bf
+aa = labelled==15
+aa_x = distance_transform_bf(aa)
+fig, ax = pl.subplots(1,2, figsize=(8,4))
+ax[0].imshow(aa)
+ax[1].imshow(aa_x)
+
+#%%
+pl.imshow(labelled)
+
+#%%
+masks_growing_cluster = []
+for i in reversed(np.unique(aa_x)):
+    masks_growing_cluster.append(aa_x>=i)
+fig, ax = pl.subplots(6,6, figsize=(6,6))
+for i in range(36):
+    ax.flat[i].imshow(masks_growing_cluster[i])
+    ax.flat[i].axis('off')
+
+
+#%%
+aa = torch.tensor(np.float32(aa_x>=i)*0.02).cpu().numpy()
+# pl.imshow()
+aa
+
+#%%
+print(noise.shape, noise.min(), noise.max(), noise[250:270,50:70].unique())
+pl.hist((noise>0).cpu().numpy());
+
+#%%
+LAB=15
+pl.imshow(xx==LAB)
+XX = np.where(xx==LAB)
+cluster0_coords = np.asarray([np.asarray((i,j)) for i,j in zip(XX[0], XX[1])])
+XX = np.where(np.logical_and(xx!=LAB, xx>0))
+
+cluster_others_coords = np.asarray([np.asarray((i,j)) for i,j in zip(XX[0], XX[1])])
+print(cluster0_coords.shape, cluster_others_coords.shape)
+dists = distance.cdist(cluster0_coords, cluster_others_coords)#.min(axis=1)
+dists.shape
+
+#%%
+clus_number, clus_coord = find_closest_cluster(xx, LAB)
+clus_number, clus_coord
+#%%
+
+#%%
+# xx[np.where(xx == clus_number)]=LAB
+# pl.imshow(xx)
+clus_number, clus_coord = find_closest_cluster(xx, LAB)
+xx[np.where(xx == clus_number)]=LAB
+pl.figure()
+pl.imshow(xx)
+
+#%%
+dist_small = np.where(dists==np.min(dists.min(axis=0)))[1][0]
+cluster_others_coords[dist_small]
+
+
+#%%
+XX = np.where(labelled>0)
+X = []
+Y = []
+for i,j in zip(XX[0], XX[1]):
+    Y.append(labelled[i,j])
+    X.append(np.asarray((i,j)))
+X = np.asarray(X)
+Y = np.asarray(Y)
+X.shape, Y.shape, np.unique(Y)
+
+#%%
+from sklearn.cluster import AgglomerativeClustering
+clustering = AgglomerativeClustering(linkage='complete', n_clusters=10)
+clustering.fit(X)
+
+canvas = np.zeros_like(labelled)
+labels_ = clustering.labels_+1
+for idx, (i,j) in enumerate(zip(XX[0], XX[1])):
+    canvas[i,j] = labels_[idx]
+pl.imshow(canvas)
+
+#%%
+
 
 #%% EXTRA
 import scipy
@@ -200,3 +335,23 @@ ax[0,1].imshow(scan_slice_segm)
 ax[1,0].imshow(im4)
 ax[1,1].imshow(im5)
 ax[1,2].imshow(clump_mask)
+
+
+# aa = texture_lesion[0,100:150,100:150]
+# bb = binary_erosion(aa>.3)
+# bb1 = binary_dilation(bb)
+# bb1 = distance_transform_bf(bb)
+# bb = binary_erosion(aa>.15)
+# bb = binary_dilation(bb)
+# bb = distance_transform_bf(bb)
+# xx = bb+bb1*2
+# labelled, nr = label(xx)
+# xx = labelled * ((bb>0).astype(int)-(binary_erosion(bb>0)).astype(int))
+
+# fig, ax = pl.subplots(2,3, figsize=(12,8))
+# ax[0,0].imshow(aa)
+# ax[0,1].imshow(bb1)
+# ax[0,2].imshow(bb)
+# ax[1,0].imshow(bb+bb1*2)
+# ax[1,1].imshow(labelled)
+# ax[1,2].imshow(xx)

@@ -9,6 +9,8 @@ from operator import mul
 from functools import reduce
 import numpy as np
 import scipy
+from scipy.spatial import distance
+from scipy.ndimage.morphology import binary_erosion, binary_dilation, distance_transform_bf
 
 def get_segmented_lungs(im, thresh=.5):
     """This funtion segments the lungs from the given 2D slice.
@@ -28,13 +30,15 @@ def get_segmented_lungs(im, thresh=.5):
     cleared = clear_border(binary)
 
     # Label the image
-    label_image = label(cleared)
+    label_image = label(cleared, connectivity=1)
 
     # Keep the labels with 2 largest areas
     areas = [r.area for r in regionprops(label_image)]
     areas.sort()
     for region in regionprops(label_image):
-        # print (region.area, areas[-2])
+        try:
+            areas[-2]
+        except IndexError: continue
         if region.area < areas[-2]:
             for coordinates in region.coords:                
                 label_image[coordinates[0], coordinates[1]] = 0
@@ -198,3 +202,35 @@ def make_mosaic_of_rects(all_rects, lung_samples2, bin0):
                     continue
     other_vars = [conds, shape_lung, shape_rec, coords_error]
     return mosaic, other_vars
+
+def convert_from_0ch_to_3ch(img):
+    img = np.expand_dims(img,-1)
+    img = np.repeat(img,3,-1)
+    img = np.expand_dims(img,0)
+    img = np.float32(img)
+    return img
+
+def find_closest_cluster(boundaries, label_):
+    '''Find the number of the cluster that is closer to 
+    any point of cluster label_'''
+    XX = np.where(boundaries==label_)
+    cluster0_coords = np.asarray([np.asarray((i,j)) for i,j in zip(XX[0], XX[1])])
+    XX = np.where(np.logical_and(boundaries!=label_, boundaries>0))
+    cluster_others_coords = np.asarray([np.asarray((i,j)) for i,j in zip(XX[0], XX[1])])
+    dists = distance.cdist(cluster0_coords, cluster_others_coords)#.min(axis=1)
+    dist_small = np.where(dists==np.min(dists.min(axis=0)))[1][0]
+    closest_coord = cluster_others_coords[dist_small]
+    closest_cluster = boundaries[closest_coord[0],closest_coord[1]]
+    return closest_cluster, closest_coord
+
+def find_texture_relief(area, thresh0=.3, thresh1=.15):
+    area_mod = binary_erosion(area > thresh0)
+    area_mod1 = binary_dilation(area_mod)
+    area_mod1 = distance_transform_bf(area_mod)
+    area_mod = binary_erosion(area > thresh1)
+    area_mod = binary_dilation(area_mod)
+    area_mod = distance_transform_bf(area_mod)
+    xx = area_mod+area_mod1*2
+    labelled, nr = scipy.ndimage.label(xx)
+    xx = labelled * ((area_mod>0).astype(int)-(binary_erosion(area_mod>0)).astype(int))
+    return xx, labelled, area_mod
