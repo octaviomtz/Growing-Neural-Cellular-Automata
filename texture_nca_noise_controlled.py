@@ -103,7 +103,7 @@ loss_log = []
 with torch.no_grad():
   pool = ca.seed(1024)
 
-# %%
+# %% TRAINING WITH NOISE
 #@title training loop {vertical-output: true}
 for i in range(5000):
   with torch.no_grad():

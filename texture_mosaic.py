@@ -24,6 +24,19 @@ from scipy.ndimage import label
 from tqdm import tqdm
 
 #%%
+def create_mask_using_rects(mosaic, packer):
+    mosaic_border = np.zeros_like(mosaic)
+    for rect in packer[0]:
+        try:
+            mosaic_border[rect.y:rect.y+rect.height, rect.x] = 1
+            mosaic_border[rect.y:rect.y+rect.height, rect.x+rect.width] = 1
+            mosaic_border[rect.y, rect.x: rect.x+rect.width] = 1
+            mosaic_border[rect.y+rect.height, rect.x:rect.x+rect.width] = 1
+        except IndexError: continue
+    mosaic_mask = np.clip((mosaic==0) + mosaic_border, 0, 1)
+    return mosaic_mask
+
+#%%
 import os
 data_folder = '/content/drive/MyDrive/Datasets/covid19/COVID-19-20_v2/Train'
 files = os.listdir(data_folder)
@@ -36,10 +49,10 @@ SCAN_NAME = 'volume-covid19-A-0014'
 SLICE=34
 torch.set_default_tensor_type('torch.FloatTensor') 
 
-lung_samples=[]
-lesion_samples=[]
-for SCAN_NAME in tqdm(files[:40]): 
-    if SCAN_NAME in ['volume-covid19-A-0247', 'volume-covid19-A-0504']: continue
+# lung_samples=[]
+# lesion_samples=[]
+for SCAN_NAME in tqdm(files[40:60]): 
+    if SCAN_NAME in ['volume-covid19-A-0247', 'volume-covid19-A-0504', 'volume-covid19-A-0112']: continue
     images, labels, keys, files_scans = load_COVID19_v2(data_folder, SCAN_NAME)
     scan, scan_mask = load_scans(files_scans, keys, 1, SCAN_NAME,mode="synthetic")
 
@@ -63,6 +76,12 @@ for SCAN_NAME in tqdm(files[:40]):
             lesion_samples.append(scan_slice[Y1:Y2, X1:X2])
 print('done')
 
+#%%
+from copy import copy
+# lesion_samples_bckp = copy(lesion_samples)
+# lung_samples_bckp = copy(lung_samples)
+# lung_samples = lung_samples_bckp
+# lesion_samples = lesion_samples_bckp
 
 #%% STEP 1. GET ALL RECTS FROM A SINGLE SCAN
 data_folder = '/content/drive/MyDrive/Datasets/covid19/COVID-19-20_v2/Train'
@@ -151,8 +170,19 @@ lesion_samples2 = [i for i in lesion_samples if 0 not in i.shape]
 #     lesion_samples2 = lesion_samples2 + copy(lesion_samples2) + lesions_small*5
 #     lesion_samples2 = lesion_samples2*4
 len(lesion_samples2)
+
+#%% SELECT THOSE LESIONS RECTS WITH HIGH INTENSITY
+lesion_samples_high_intens = []
+intensity_median = []
+for i in lesion_samples2:
+    intensity_median.append(np.median(i))
+    if np.median(i)>.25:
+        lesion_samples_high_intens.append(i)
+# plt.hist(intensity_median, bins=20)
+lesion_samples2 =lesion_samples_high_intens
+
 #%%
-bin_les0=(350,350)
+bin_les0=(256,256)
 rects_lung = [i.shape for i in lesion_samples2]
 print(len(lesion_samples2))
 bins = [bin_les0, (80, 40), (200, 150)]
@@ -174,26 +204,17 @@ for rect in packer_les[0]:
     ax.add_patch(rect_patches)
 
 #%%
-mosaic_img = convert_from_0ch_to_3ch(mosaic)
-plt.imshow(mosaic_img[0])
-np.save('data/texture_lesion2', mosaic_img)
+np.save('data/mosaic_lesion_for_inpaint', mosaic)
 
 #%%
-def create_mask_using_rects(mosaic, packer):
-    mosaic_border = np.zeros_like(mosaic)
-    for rect in packer[0]:
-        try:
-            mosaic_border[rect.y:rect.y+rect.height, rect.x] = 1
-            mosaic_border[rect.y:rect.y+rect.height, rect.x+rect.width] = 1
-            mosaic_border[rect.y, rect.x: rect.x+rect.width] = 1
-            mosaic_border[rect.y+rect.height, rect.x:rect.x+rect.width] = 1
-        except IndexError: continue
-    mosaic_mask = np.clip((mosaic==0) + mosaic_border, 0, 1)
-    return mosaic_mask
+mosaic_img = convert_from_0ch_to_3ch(mosaic)
+plt.imshow(mosaic_img[0][...,0]>0)
+# np.save('data/texture_lesion2', mosaic_img)
+
 # %%
 texture_lesion_mask = create_mask_using_rects(mosaic, packer_les)
 plt.imshow(texture_lesion_mask)
-np.save('data/texture_lesion2_mask', texture_lesion_mask)
+# np.save('data/mosaic_lesion_mask_for_inpaint', texture_lesion_mask)
 
 
 # %% INPAINT BORDERS

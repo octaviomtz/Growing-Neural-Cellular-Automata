@@ -10,3 +10,6 @@ lib/__pycache__/*
 *.mp4
 __pycache__/*
 *.pyc
+*.pt
+*.zip
+main_pygame_dl.py
