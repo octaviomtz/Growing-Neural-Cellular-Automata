@@ -82,3 +82,14 @@ We use WANDB _sweeps_ to handle hyperparameter optimization.
     cfg.lr = wandb_omega_config.lr
     ```
 
+# Testing
+
+We use tox to unit test specifc parts of the program. 
+To run the the tests just run
+```bash
+tox
+```
+this will check all the tests in the tests/ folder
+
+For example, lib.utils_lung_segmentation.get_max_rect_in_mask finds the largest rectangle in a binary mask (to later create a mosaic for texture synthesis). Then, if the function is updated, tests/test_mask_rect_in_mask.py will check that the correct rectangle is found by the updated function. 
+![unit_test_example](/images_github/tox_test_example.png?raw=true)
