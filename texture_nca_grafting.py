@@ -120,7 +120,7 @@ with torch.no_grad():
 
 # %% TRAINING
 #@title training loop {vertical-output: true}
-for i in range(4000):
+for i in range(1000):
   with torch.no_grad():
     batch_idx = np.random.choice(len(pool), 4, replace=False)
     x = pool[batch_idx]
@@ -159,8 +159,8 @@ for i in range(4000):
 
 #%%
 #@title NCA video {vertical-output: true}
-def show_ca(ca):
-  with VideoWriter() as vid, torch.no_grad():
+def show_ca(ca, path):
+  with VideoWriter(path) as vid, torch.no_grad():
     x = ca.seed(1, 256)
     for k in tnrange(300, leave=False):
       step_n = min(2**(k//30), 16)
@@ -169,22 +169,32 @@ def show_ca(ca):
       img = to_rgb(x[0]).permute(1, 2, 0).cpu()
       vid.add(zoom(img, 2))
 
-show_ca(torch.load('models/init_lungs.pt'))
-show_ca(torch.load('models/init_lungs_covid.pt'))
+show_ca(torch.load('models/init_lungs.pt'), './temp_vids/init_lungs.mp4')
+show_ca(torch.load('models/init_lungs_covid.pt'), './temp_vids/init_lungs_covid.mp4')
+
+#%%
+print(x.shape)
+pl.imshow(x[0,0,...].detach().cpu().numpy())
 
 # %%
 W = 256
 with torch.no_grad():
   r = torch.linspace(-1, 1, W)**2
   r = (r+r[:,None]).sqrt()
-  mask = ((0.6-r)*8.0).sigmoid()
-  pl.contourf(mask.cpu())
-  pl.colorbar()
-  pl.axis('equal')
+  mask = ((0.006-r)*8.0).sigmoid() #.6, .8
+  mask = (mask - torch.min(mask)) / (torch.max(mask) - torch.min(mask))
+  # pl.contourf(mask.cpu())
+  # pl.colorbar()
+  # pl.axis('equal')
+
+pl.imshow(mask.detach().cpu().numpy())
+pl.colorbar()
+pl.axis('equal')
+
 # %%
 ca1 = torch.load('models/init_lungs.pt')
 ca2 = torch.load('models/init_lungs_covid.pt')
-with VideoWriter() as vid, torch.no_grad():
+with VideoWriter('./temp_vids/ca1_ca2.mp4') as vid, torch.no_grad():
   x = torch.zeros([1, ca1.chn, W, W])
   for i in tnrange(600):
     for k in range(8):
@@ -192,11 +202,57 @@ with VideoWriter() as vid, torch.no_grad():
       x = x1 + (x2-x1)*mask
     img = to_rgb(x[0]).permute(1, 2, 0).cpu()
     vid.add(zoom(img, 2))
+
+#%%
+def growing_circle(iter):
+    radious = iter / 10000
+    W = 256
+    with torch.no_grad():
+        r = torch.linspace(-1, 1, W)**2
+        r = (r+r[:,None]).sqrt()
+        mask = ((radious - r) * 8.0).sigmoid() #.6, .8
+        mask = (mask - torch.min(mask)) / (torch.max(mask) - torch.min(mask))
+    return mask
+
+ca1 = torch.load('models/init_lungs.pt')
+ca2 = torch.load('models/init_lungs_covid.pt')
+with VideoWriter('./temp_vids/growing_circleC.mp4') as vid, torch.no_grad():
+  x = torch.zeros([1, ca1.chn, W, W])
+  for i in tnrange(600): 
+    x[:] = ca1(x)
+  x1 = x
+  x = torch.zeros([1, ca1.chn, W, W])
+  for i in tnrange(600):
+    mask = growing_circle(i)
+    for i in tnrange(60):
+        x[:] = ca2(x)
+    x2 = x
+    x = x1 + (x2-x1)*mask
+    img = to_rgb(x[0]).permute(1, 2, 0).cpu()
+    vid.add(zoom(img, 2))
+
+#%%
+def growing_circle2(iter):
+    radious = iter
+    W = 256
+    with torch.no_grad():
+        r = torch.linspace(-1, 1, W)**2
+        r = (r+r[:,None]).sqrt()
+        mask = 1-10/((100+(1*torch.exp(1-r)))*1) #.6, .8
+        mask = (mask - torch.min(mask)) / (torch.max(mask) - torch.min(mask))
+    return mask
+a = growing_circle2(.1).detach().cpu().numpy()
+pl.imshow(a)
+pl.colorbar()
+pl.axis('equal')
+
+#%%
+
 # %%
 def show_pair(fn1, fn2, W=512):
   ca1 = torch.load(fn1)
   ca2 = torch.load(fn2)
-  with VideoWriter() as vid, torch.no_grad():
+  with VideoWriter('./temp_vids/show_pair.mp4') as vid, torch.no_grad():
     x = torch.zeros([1, ca1.chn, 128, W])
     mask = 0.5-0.5*torch.linspace(0, 2.0*np.pi, W).cos()
     for i in tnrange(300, leave=False):

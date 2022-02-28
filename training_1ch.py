@@ -233,8 +233,8 @@ mse_recons_default2 = np.load('data/lesion2/mse_recons_default_ep=2k.npy')
 #%%
 target_img = load_1ch_py_array('data/lesion2/lesion.npz')
 print(np.shape(target_img))
-plt.figure(figsize=(4,4))
-plt.imshow(np.squeeze(to_rgb_1ch(target_img)))
+# plt.figure(figsize=(4,4))
+# plt.imshow(np.squeeze(to_rgb_1ch(target_img)))
 
 #%%
 print(len(loss_log_default))

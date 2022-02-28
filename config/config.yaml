@@ -22,7 +22,7 @@ ITER_SAVE: 30
 save_reconstruction: False
 
 wandb:
-  save: True
+  save: False
   name: cell_auto
 
 SAVE_NUMPY: False

@@ -2,7 +2,9 @@ scipy==1.4.1
 imageio==2.4.1
 numpy==1.19.5
 matplotlib==3.2.2
-torch==1.9.0+cu102
+# torch==1.9.0+cu102 #original
+# torch==1.9.0 #installation worked
+torch==1.10.0+cu111
 omegaconf==2.1.0
 hydra_core==1.1.0
 tqdm==4.41.1

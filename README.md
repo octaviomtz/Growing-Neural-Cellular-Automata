@@ -1,7 +1,7 @@
-# Neural Cellular Automata (nCA) experiments
-Experimenting with different parameters of the Cellular Automata on 1-channel images.
-
-Based on the pytorch implementation (github.com/chenmingxiang110/Growing-Neural-Cellular-Automata) of the nCA developed by _**Mordvintsev A.**, et al., "Growing Neural Cellular Automata", Distill, 2020._
+# Neural Cellular Automata (nCA) covid-19 lesion synthesis
+1. Split large lesions using superpixels into smaller components
+1. For each smaller component set a seed and reconstruct it using CA
+![hydra_folders](/images_github/lesion_superpixels.png?raw=true)
 
 ## Use:
 1. To segment (if needed) and train a nCA on the segmented parts of a lesion run
@@ -93,3 +93,7 @@ this will check all the tests in the tests/ folder
 
 For example, lib.utils_lung_segmentation.get_max_rect_in_mask finds the largest rectangle in a binary mask (to later create a mosaic for texture synthesis). Then, if the function is updated, tests/test_mask_rect_in_mask.py will check that the correct rectangle is found by the updated function. 
 ![unit_test_example](/images_github/tox_test_example.png?raw=true)
+
+## Notes
+Experimenting with different parameters of the Cellular Automata on 1-channel images.
+Based on the pytorch implementation (github.com/chenmingxiang110/Growing-Neural-Cellular-Automata) of the nCA developed by _**Mordvintsev A.**, et al., "Growing Neural Cellular Automata", Distill, 2020._
