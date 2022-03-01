@@ -156,7 +156,7 @@ def boundaries_superpixels(img, mask):
     1. Remove small objects
     2. Apply superpixels only if mask is larger than threshold (SCALAR_LIMIT_CLUSTER_SIZE)"""
     mask = remove_small_objects(mask, 20)
-    SCALAR_LIMIT_CLUSTER_SIZE = 200 #340
+    SCALAR_LIMIT_CLUSTER_SIZE = 200 
     numSegments = np.max([np.sum(mask > 0)//SCALAR_LIMIT_CLUSTER_SIZE, 1]) # run slic with large segments to eliminate background & vessels
     TRESH_BACK = 0.10 
     THRES_VESSEL = 0.7 

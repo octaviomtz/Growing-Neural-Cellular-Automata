@@ -11,13 +11,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 from skimage.morphology import remove_small_objects
 from IPython.display import clear_output
-
+import monai
 from lib.CAModel import CAModel
-
 from tqdm import tqdm
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import logging
+import wandb
 
 from lib.utils_plots import (visualize_batch,
                             plot_loss_max_intensity_and_mse,
@@ -39,9 +39,6 @@ from lib.utils_superpixels import (
     boundaries_superpixels,
     how_large_is_each_segment
 )
-# from lib.utils_cell_auto import prepare_seed
-import monai
-import wandb
 
 # FUNCTIONS
 def prepare_seed(target, this_seed, device, num_channels = 16, pool_size = 1024):
@@ -54,8 +51,6 @@ def prepare_seed(target, this_seed, device, num_channels = 16, pool_size = 1024)
 
 def config_cellular_automata(orig_dir, CHANNEL_N, CELL_FIRE_RATE, device, SCALE_GROWTH, model_path, lr, betas_0, betas_1, lr_gamma):
     ca = CAModel(CHANNEL_N, CELL_FIRE_RATE, device, scale_growth=SCALE_GROWTH).to(device)
-    # ca.load_state_dict(torch.load(f'{orig_dir}/{model_path}'))
-
     optimizer = optim.Adam(ca.parameters(), lr=lr, betas=(betas_0, betas_1))
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, lr_gamma)
 
@@ -112,6 +107,7 @@ def main_train(cfg: DictConfig):
     log = logging.getLogger(__name__)
     log.info(OmegaConf.to_yaml(cfg))
     path_orig = hydra.utils.get_original_cwd()
+    
     # LOAD FILES
     images, labels, keys, files_scans = load_COVID19_v2(cfg.data.data_folder, cfg.data.SCAN_NAME)
     name_prefix = load_synthetic_lesions(files_scans, keys, cfg.data.BATCH_SIZE)
@@ -120,6 +116,7 @@ def main_train(cfg: DictConfig):
     loader_lesions = load_individual_lesions(path_single_lesions, cfg.data.BATCH_SIZE)
     texture = load_synthetic_texture(cfg.data.path_texture)
     print(scan.shape, scan_mask.shape, texture.shape)
+
     # SUPERPIXELS
     mask_sizes=[]
     cluster_sizes = []
@@ -178,6 +175,7 @@ def main_train(cfg: DictConfig):
                 loss_log.append(loss.item())
                 log.info(f"loss = {loss.item()}")
                 if cfg.wandb.save: wandb.log({"train_loss":loss.item()})
+            
             # RECONSTRUCTION
             grow = torch.tensor(seed).unsqueeze(0).to(cfg.device)
             grow_sel = []
