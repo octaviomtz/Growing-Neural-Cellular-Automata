@@ -152,6 +152,9 @@ def fig_superpixels_only_lesions(path_synthesis_figs, name_prefix, scan, scan_ma
         fig_slic.savefig(f'{path_synthesis_figs}{name_prefix}_slic.png')    
 
 def boundaries_superpixels(img, mask):
+    """Preparation before applying superpixels.
+    1. Remove small objects
+    2. Apply superpixels only if mask is larger than threshold (SCALAR_LIMIT_CLUSTER_SIZE)"""
     mask = remove_small_objects(mask, 20)
     SCALAR_LIMIT_CLUSTER_SIZE = 200 #340
     numSegments = np.max([np.sum(mask > 0)//SCALAR_LIMIT_CLUSTER_SIZE, 1]) # run slic with large segments to eliminate background & vessels

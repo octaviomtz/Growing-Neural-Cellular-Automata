@@ -50,6 +50,16 @@ def get_xforms_load(mode="load", keys=("image", "label")):
     return monai.transforms.Compose(xforms)
 
 def load_COVID19_v2(data_folder, SCAN_NAME):
+    """Return only strings of 
+    images, labels, keys, files_scans
+    that will be used with MONAI to load the data
+    args:
+         data_folder, SCAN_NAME
+    return: 
+        images: (type: str), 
+        labels: (type: str), 
+        keys: (type: str), 
+        files_scans (type: dict)"""
     images= [f'{data_folder}/{SCAN_NAME}_ct.nii.gz']
     labels= [f'{data_folder}/{SCAN_NAME}_seg.nii.gz']
     keys = ("image", "label")
